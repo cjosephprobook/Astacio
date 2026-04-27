@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "Service Zone Builder",
+  title: "Astacio Service Zone Builder",
   description: "Zip-code heatmap and zone editor for service-region planning",
 };
 

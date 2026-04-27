@@ -360,6 +360,18 @@ export default function ZipCodeMap() {
   function toggleZip(zip: string) {
     const z = zipToZoneRef.current.get(zip);
     if (z?.locked) return;
+    // If the zip is already in an unlocked zone, clicking removes it from
+    // that zone (direct deselect).
+    if (z) {
+      setZones((prev) =>
+        prev.map((zone) =>
+          zone.id === z.id
+            ? { ...zone, zips: zone.zips.filter((q) => q !== zip) }
+            : zone
+        )
+      );
+      return;
+    }
     setSelectedZips((prev) => {
       const next = new Set(prev);
       if (next.has(zip)) next.delete(zip);

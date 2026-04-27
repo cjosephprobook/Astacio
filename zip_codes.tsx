@@ -663,8 +663,32 @@ export default function ZipCodeMap() {
         }
       });
     } else {
-      // ----- 2D choropleth -----
-      g.selectAll("path")
+      // ----- 2D choropleth (yaw-rotatable) -----
+      // Pivot = center of projected bbox of visible features.
+      let minX = Infinity,
+        maxX = -Infinity,
+        minY = Infinity,
+        maxY = -Infinity;
+      filtered.features.forEach((f: any) => {
+        const b = path.bounds(f);
+        if (b[0][0] < minX) minX = b[0][0];
+        if (b[1][0] > maxX) maxX = b[1][0];
+        if (b[0][1] < minY) minY = b[0][1];
+        if (b[1][1] > maxY) maxY = b[1][1];
+      });
+      const pivotX = (minX + maxX) / 2;
+      const pivotY = (minY + maxY) / 2;
+      const angleDeg = (azimuth * 180) / Math.PI;
+      const cosA = Math.cos(azimuth);
+      const sinA = Math.sin(azimuth);
+
+      // Polygons rendered inside a rotated group so paths don't have to be
+      // recomputed each frame.
+      const polyG = g
+        .append("g")
+        .attr("transform", `rotate(${angleDeg} ${pivotX} ${pivotY})`);
+      polyG
+        .selectAll("path")
         .data(filtered.features)
         .join("path")
         .attr("d", (d: any) => path(d) as string)
@@ -690,12 +714,25 @@ export default function ZipCodeMap() {
         })
         .on("click", (_e: any, d: any) => toggleZip(d.properties.zip));
 
+      // Labels in a NON-rotated group, positioned at the rotated centroid so
+      // text stays upright at any yaw angle.
       if (showLabels) {
+        const rotated = (cx: number, cy: number) => {
+          const dx = cx - pivotX;
+          const dy = cy - pivotY;
+          return [pivotX + dx * cosA - dy * sinA, pivotY + dx * sinA + dy * cosA];
+        };
         g.selectAll("text")
           .data(filtered.features)
           .join("text")
-          .attr("x", (d: any) => path.centroid(d)[0])
-          .attr("y", (d: any) => path.centroid(d)[1])
+          .attr("x", (d: any) => {
+            const c = path.centroid(d);
+            return rotated(c[0], c[1])[0];
+          })
+          .attr("y", (d: any) => {
+            const c = path.centroid(d);
+            return rotated(c[0], c[1])[1];
+          })
           .attr("text-anchor", "middle")
           .attr("dominant-baseline", "middle")
           .attr("font-size", "8px")
@@ -871,11 +908,11 @@ export default function ZipCodeMap() {
           <div
             ref={mapRef}
             onMouseDown={(e) => {
-              if (viewMode !== "3d") return;
               const startX = e.clientX;
               const startY = e.clientY;
               const startAz = azimuth;
               const startTilt = tilt;
+              const allowTilt = viewMode === "3d";
               let dragged = false;
               const onMove = (ev: MouseEvent) => {
                 const dx = ev.clientX - startX;
@@ -883,9 +920,14 @@ export default function ZipCodeMap() {
                 if (!dragged && Math.hypot(dx, dy) < 3) return;
                 dragged = true;
                 setAzimuth(startAz - dx * 0.01);
-                setTilt(
-                  Math.max(0.05, Math.min(Math.PI / 2 - 0.05, startTilt - dy * 0.008))
-                );
+                if (allowTilt) {
+                  setTilt(
+                    Math.max(
+                      0.05,
+                      Math.min(Math.PI / 2 - 0.05, startTilt - dy * 0.008)
+                    )
+                  );
+                }
               };
               const onUp = () => {
                 window.removeEventListener("mousemove", onMove);
@@ -910,39 +952,39 @@ export default function ZipCodeMap() {
               borderRadius: 12,
               border: "1px solid #e5e3dc",
               overflow: "hidden",
-              cursor: viewMode === "3d" ? "grab" : "default",
+              cursor: "grab",
               userSelect: "none",
             }}
           />
           <div ref={tooltipRef} />
 
-          {/* 3D camera controls */}
-          {viewMode === "3d" && (
-            <div
-              style={{
-                marginTop: 8,
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                fontSize: 11,
-                color: "#666",
-              }}
-            >
-              <span>Drag the map to rotate.</span>
-              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                Yaw
-                <input
-                  type="range"
-                  min={-180}
-                  max={180}
-                  step={1}
-                  value={Math.round((azimuth * 180) / Math.PI)}
-                  onChange={(e) =>
-                    setAzimuth((Number(e.target.value) * Math.PI) / 180)
-                  }
-                  style={{ width: 100 }}
-                />
-              </label>
+          {/* Camera controls */}
+          <div
+            style={{
+              marginTop: 8,
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              fontSize: 11,
+              color: "#666",
+            }}
+          >
+            <span>Drag the map to rotate.</span>
+            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              Yaw
+              <input
+                type="range"
+                min={-180}
+                max={180}
+                step={1}
+                value={Math.round((azimuth * 180) / Math.PI)}
+                onChange={(e) =>
+                  setAzimuth((Number(e.target.value) * Math.PI) / 180)
+                }
+                style={{ width: 100 }}
+              />
+            </label>
+            {viewMode === "3d" && (
               <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 Tilt
                 <input
@@ -957,24 +999,24 @@ export default function ZipCodeMap() {
                   style={{ width: 100 }}
                 />
               </label>
-              <button
-                onClick={() => {
-                  setAzimuth(0);
-                  setTilt(Math.PI * 0.32);
-                }}
-                style={{
-                  padding: "3px 10px",
-                  fontSize: 11,
-                  background: "#fff",
-                  border: "1px solid #d3d1c7",
-                  borderRadius: 4,
-                  cursor: "pointer",
-                }}
-              >
-                Reset view
-              </button>
-            </div>
-          )}
+            )}
+            <button
+              onClick={() => {
+                setAzimuth(0);
+                setTilt(Math.PI * 0.32);
+              }}
+              style={{
+                padding: "3px 10px",
+                fontSize: 11,
+                background: "#fff",
+                border: "1px solid #d3d1c7",
+                borderRadius: 4,
+                cursor: "pointer",
+              }}
+            >
+              Reset view
+            </button>
+          </div>
 
           {/* Heatmap legend */}
           {colorBy === "heat" && (

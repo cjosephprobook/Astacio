@@ -359,7 +359,7 @@ export default function Page() {
       }}
     >
       <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 16, color: "#1a1a1a" }}>
-        Astacio Service Zone Builder
+        Service Zone Builder
       </h1>
 
       <div
